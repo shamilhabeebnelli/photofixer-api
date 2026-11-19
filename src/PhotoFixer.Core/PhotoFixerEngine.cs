@@ -55,7 +55,7 @@ public static class PhotoFixerEngine
             _ => src.Format.Contains("png", StringComparison.OrdinalIgnoreCase) ? OutputFormat.Png : OutputFormat.Jpeg
         };
 
-        long? limitBytes = req.MaxKb is { } kb ? kb * 1024L : null;
+        long? limitBytes = req.MaxKb is { } kb ? kb * 1000L : null;
         await codec.RenderAsync(geo);
 
         int? quality = null;
@@ -63,12 +63,17 @@ public static class PhotoFixerEngine
         string mime;
         string ext;
 
+        if (limitBytes is not null && format == OutputFormat.Jpeg && !src.Format.Contains("jpeg", StringComparison.OrdinalIgnoreCase) && !src.Format.Contains("jpg", StringComparison.OrdinalIgnoreCase))
+            notes.Add($"Converted from {FormatName(src.Format)} to JPEG - JPEG is the format that can reliably honour a strict KB limit.");
+
         if (format == OutputFormat.Png)
         {
             size = await codec.EncodePngAsync();
             mime = "image/png"; ext = ".png";
             if (limitBytes is { } pl && size > pl)
-                warnings.Add($"PNG is lossless and cannot reliably reach {req.MaxKb} KB. The result is {Round(size)} KB. Switch the output format to JPEG to hit small size targets.");
+                // A KB limit is a strict ceiling: never present an over-limit file as a success.
+                return ProcessResult.Fail(
+                    $"PNG is lossless and cannot reach {req.MaxKb} KB here; this image comes out at {Round(size)} KB as PNG. Choose JPEG output, which can be compressed to the target.");
             else
                 notes.Add("PNG keeps full quality, but file sizes stay larger than JPEG.");
         }
@@ -110,13 +115,18 @@ public static class PhotoFixerEngine
                     }
                     quality = solved;
                     if (shrunk)
-                        notes.Add($"Scaled down to {geo.OutW} x {geo.OutH} px (your Fit inside numbers are maximums, not an exact size) to reach the {req.MaxKb} KB target.");
+                        notes.Add($"Scaled down to {geo.OutW} x {geo.OutH} px (proportions kept, never cropped or stretched; your Fit inside numbers are maximums, not an exact size) because quality alone could not reach the {req.MaxKb} KB target.");
                 }
                 else
                 {
                     quality = solved;
                 }
                 size = await codec.EncodeJpegAsync(quality.Value); // leave the chosen quality as "last"
+                if (size > jl)
+                    // Final acceptance check: never return an over-limit file as a success, even if an
+                    // encoder ever turns out non-deterministic. The KB limit is a strict ceiling.
+                    return ProcessResult.Fail(
+                        $"Cannot reliably reach {req.MaxKb} KB for this photo (smallest verified result was {Round(size)} KB). Raise the max KB.");
             }
             else
             {
@@ -152,5 +162,16 @@ public static class PhotoFixerEngine
         return best;
     }
 
-    private static double Round(long bytes) => Math.Round(bytes / 1024.0, 1);
+    private static double Round(long bytes) => Math.Round(bytes / 1000.0, 1);
+
+    private static string FormatName(string mime) => mime switch
+    {
+        "image/png" => "PNG",
+        "image/webp" => "WebP",
+        "image/gif" => "GIF",
+        "image/bmp" => "BMP",
+        "image/avif" => "AVIF",
+        "image/heic" => "HEIC",
+        _ => "JPEG"
+    };
 }
