@@ -64,12 +64,25 @@ Check("G4 no dims identity", g4.OutW == 3000 && g4.OutH == 2000, g4.ToString());
     Check("E4 fail mentions KB", (r.Error ?? "").Contains("Raise the max KB"), r.Error ?? "");
 }
 
-// --- PNG honesty ---
+// --- PNG honesty: over the KB ceiling it fails honestly, under it succeeds with a note ---
 {
-    var codec = new FakeCodec(0.05);
-    var r = await PhotoFixerEngine.ProcessAsync(src, new ProcessRequest(400, null, 50, FitMode.FitInside, OutputFormat.Png), codec);
-    Check("P1 png succeeds", r.Success && r.MimeType == "image/png", r.MimeType ?? "");
-    Check("P1 png over-limit warning", r.Warnings.Any(w => w.Contains("PNG")), string.Join(" | ", r.Warnings));
+    var codec = new FakeCodec(0.05); // 400x267 PNG = ~170.9 KB
+    var over = await PhotoFixerEngine.ProcessAsync(src, new ProcessRequest(400, null, 50, FitMode.FitInside, OutputFormat.Png), codec);
+    Check("P1 png over-limit fails, never returned as success", !over.Success, over.Error ?? "");
+    Check("P1 fail points to JPEG", (over.Error ?? "").Contains("JPEG"), over.Error ?? "");
+
+    var codec2 = new FakeCodec(0.05);
+    var under = await PhotoFixerEngine.ProcessAsync(src, new ProcessRequest(400, null, 200, FitMode.FitInside, OutputFormat.Png), codec2);
+    Check("P2 png under-limit succeeds", under.Success && under.MimeType == "image/png", under.Error ?? under.MimeType ?? "");
+    Check("P2 png size note", under.Notes.Any(n => n.Contains("PNG keeps full quality")), string.Join(" | ", under.Notes));
+}
+
+// --- Decimal KB: 1 KB = 1000 bytes, a strict ceiling ---
+{
+    // 600x600 at q5 = ~43.5 KB: would fit a 1024-byte "43 KB" (44,032 B), must fail a decimal 43 KB (43,000 B).
+    var codec = new FakeCodec(0.499);
+    var r = await PhotoFixerEngine.ProcessAsync(src, new ProcessRequest(600, 600, 43, FitMode.FillCrop, OutputFormat.Jpeg), codec);
+    Check("D1 decimal ceiling fails 43.5KB against 43KB", !r.Success, r.Error ?? "");
 }
 
 // --- Validation ---
@@ -94,7 +107,7 @@ Check("G4 no dims identity", g4.OutW == 3000 && g4.OutH == 2000, g4.ToString());
     var up = await PhotoFixerEngine.ProcessAsync(src, new ProcessRequest(4000, null, null, FitMode.FitInside, OutputFormat.Jpeg), codec);
     Check("W1 upscale warning", up.Warnings.Any(w => w.Contains("Upscaling")), string.Join(" | ", up.Warnings));
 
-    var lqCodec = new FakeCodec(0.2); // lands at quality ~32 for a 40 KB cap
+    var lqCodec = new FakeCodec(0.2); // lands at quality ~31 for a 40 KB cap
     var lq = await PhotoFixerEngine.ProcessAsync(src, new ProcessRequest(800, null, 40, FitMode.FitInside, OutputFormat.Jpeg), lqCodec);
     Check("W2 low quality warning when squeezed", lq.Success && lq.Warnings.Any(w => w.Contains("quality")),
         $"q={lq.JpegQuality} " + string.Join(" | ", lq.Warnings));
