@@ -39,7 +39,15 @@ HEIC roadmap: Magick.NET (Apache-2.0) with native libheif.
 - `POST /v1/process` - multipart/form-data:
   - `file` (required) - the photo, max 25 MB
   - `targetWidth`, `targetHeight` (px, 16-10000, optional)
-  - `maxKb` (5-20480, optional)
+  - `maxKb` (5-20480, optional) - a strict decimal ceiling: the result is
+    always at or under maxKb x 1000 bytes, or the request fails honestly
+    with guidance (never an over-limit file returned as success). If
+    quality alone cannot reach the target, resolution is reduced
+    automatically (proportions kept, never cropped or stretched) and the
+    reduction is disclosed in X-PhotoFixer-Notes. Quality is always the
+    highest that fits the ceiling. PNG output that cannot fit the ceiling
+    fails with a pointer to JPEG; non-JPEG sources encoded as JPEG under a
+    KB target are disclosed in the notes.
   - `mode` = `fit-inside` (default) | `fill-crop` | `stretch`
   - `format` = `auto` (default) | `jpeg` | `png`
   - `preset` (optional key from /v1/presets; fills exact dimensions and
