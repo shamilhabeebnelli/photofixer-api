@@ -21,7 +21,9 @@ Or with the .NET 10 SDK:
 
 Then: `POST /v1/process` (multipart form field `file`, optional `targetWidth`,
 `targetHeight`, `maxKb`, `mode`, `format`, `preset`), `GET /v1/presets`,
-`GET /healthz`. Self-host v1 reads JPG, PNG, WebP, GIF and BMP.
+`GET /healthz`. Self-host v1 reads JPG, PNG, WebP, GIF and BMP. `maxKb` is a
+strict decimal ceiling (1 KB = 1000 bytes): the answer always comes in at or
+under the limit, or the request fails honestly - never an over-limit file.
 
 Full API reference: [src/PhotoFixer.Api/README.md](src/PhotoFixer.Api/README.md)
 
